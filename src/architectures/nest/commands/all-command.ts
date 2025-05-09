@@ -9,6 +9,7 @@ import { execSync } from "child_process";
 import chalk from "chalk";
 import { EnvironmentUtils } from "../../../common/utils/environment-utils";
 import { StringUtils } from "../../../common/utils/string-utils";
+import { FileUtils } from "../../../common/utils/file-utils";
 
 interface AllOptions {
   name?: string;
@@ -54,12 +55,6 @@ export class AllCommand extends BaseCommand {
         // Install database dependencies
         this.logInfo("Installing database dependencies...");
         this.runCommand("npm install");
-
-        // If Prisma, generate client
-        if (projectDetails.database === "prisma") {
-          this.logInfo("Generating Prisma client...");
-          this.runCommand("npx prisma generate");
-        }
       }
 
       // Step 4: Add authentication if requested
@@ -75,7 +70,26 @@ export class AllCommand extends BaseCommand {
 
       // Step 5: Add requested modules
       if (projectDetails.modules && projectDetails.modules.length > 0) {
-        for (const moduleName of projectDetails.modules) {
+        // Filter out user/users modules if auth is enabled
+        let modulesToCreate = projectDetails.modules;
+        if (projectDetails.auth) {
+          if (
+            modulesToCreate.includes("user") ||
+            modulesToCreate.includes("users")
+          ) {
+            this.logWarning(
+              `Skipping 'user' module since it's already created by the authentication module.`
+            );
+
+            modulesToCreate
+              .filter((module) => module !== "user" && module !== "users")
+              .unshift("user");
+          } else {
+            modulesToCreate.unshift("user");
+          }
+        }
+
+        for (const moduleName of modulesToCreate) {
           this.logInfo(`Creating module: ${moduleName}...`);
           const moduleCommand = new ModuleCommand();
 
@@ -83,6 +97,32 @@ export class AllCommand extends BaseCommand {
           const pluralModuleName = StringUtils.getPlural(moduleName);
           await moduleCommand.execute({ name: pluralModuleName, crud: true });
         }
+      }
+
+      // Step 6: Now that we have modules and models defined, generate the Prisma client
+      if (projectDetails.database === "prisma") {
+        this.logInfo("Generating Prisma client...");
+        this.runCommand("npx prisma generate");
+      }
+
+      // Step 7: Generate REST client files for all modules
+      if (projectDetails.modules && projectDetails.modules.length > 0) {
+        this.logInfo("Generating VS Code REST client files...");
+        const restClientDir = path.join(projectDir, ".vscode", "rest-client");
+        FileUtils.createDirectory(path.join(projectDir, ".vscode"));
+        FileUtils.createDirectory(restClientDir);
+
+        // Generate auth REST client file
+        // RestClientUtils.createAuthRestClient(restClientDir);
+
+        // Generate module-specific REST client files
+        // for (const moduleName of projectDetails.modules) {
+        //   const pluralModuleName = StringUtils.getPlural(moduleName);
+        //   RestClientUtils.createModuleRestClient(
+        //     restClientDir,
+        //     pluralModuleName
+        //   );
+        // }
       }
 
       this.logSuccess(`
@@ -167,12 +207,22 @@ Don't forget to update the environment variables in the .env file!
       });
     }
 
+    // Determine if auth will be enabled to show the appropriate message
+    let willAuthBeEnabled = options.auth;
+    if (willAuthBeEnabled === undefined) {
+      // Use default value of true if not specified in options
+      willAuthBeEnabled = true;
+    }
+
     // Modules
     questions.push({
       type: "input",
       name: "modules",
-      message:
-        "Enter module names (comma-separated) you want to create, or leave empty:",
+      message: `Enter module names (comma-separated) you want to create, or leave empty:${
+        willAuthBeEnabled
+          ? " (Note: user/users module will be skipped as auth creates it)"
+          : ""
+      }`,
       filter: (input: string) => {
         if (!input) return [];
         return input
@@ -191,7 +241,6 @@ Don't forget to update the environment variables in the .env file!
       modules: options.modules || answers.modules,
     };
   }
-
   private runCommand(command: string): void {
     try {
       execSync(command, { stdio: "inherit" });

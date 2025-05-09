@@ -54,6 +54,8 @@ export class AuthCommand extends BaseCommand {
     // Update app.module.ts to include the auth module
     this.updateAppModule(useJwt);
 
+    // Create user module if it doesn't exist
+
     // Add necessary dependencies to package.json
     this.updatePackageJson(useJwt);
 
@@ -204,7 +206,7 @@ ${
     FileUtils.createFile(
       path.join(authDir, "services", "auth.service.ts"),
       `import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
-import { UserService } from '../../user/services/user.service';
+import { UserService } from '../../user/services/users.service';
 import { RegisterDto } from '../dto/register.dto';
 import { LoginDto } from '../dto/login.dto';
 import * as bcrypt from 'bcrypt';
@@ -564,8 +566,9 @@ export const CurrentUser = createParamDecorator(
   private createUserModule(): void {
     // Create User module (required for auth) - using singular naming
     const userDir = path.join(process.cwd(), "src", "user");
+    const usersDir = path.join(process.cwd(), "src", "users");
 
-    if (FileUtils.exists(userDir)) {
+    if (FileUtils.exists(userDir) || FileUtils.exists(usersDir)) {
       this.logWarning("User module already exists. Skipping creation.");
       return;
     }
@@ -594,7 +597,7 @@ export const CurrentUser = createParamDecorator(
     FileUtils.createFile(
       path.join(userDir, "user.module.ts"),
       `import { Module } from '@nestjs/common';
-import { UserService } from './services/user.service';
+import { UserService } from './services/users.service';
 
 @Module({
   providers: [UserService],
@@ -639,5 +642,67 @@ export class UserService {
 }
 `
     );
+
+    // Update app.module.ts to include the user module
+    const appModulePath = path.join(process.cwd(), "src", "app.module.ts");
+
+    if (!FileUtils.exists(appModulePath)) {
+      this.logWarning(
+        "Warning: app.module.ts not found. Could not update app module for UserModule."
+      );
+      return;
+    }
+
+    try {
+      FileUtils.updateFile(appModulePath, (content) => {
+        // Check if the module is already imported
+        if (content.includes("UserModule")) {
+          this.logWarning("UserModule is already imported in AppModule.");
+          return content;
+        }
+
+        let updatedContent = content;
+
+        // Add import statement
+        const importStatement = `import { UserModule } from './user/user.module';`;
+
+        if (updatedContent.includes("import {")) {
+          // Add after the last import statement
+          const lastImportIndex = updatedContent.lastIndexOf("import");
+          const endOfImportIndex =
+            updatedContent.indexOf(";", lastImportIndex) + 1;
+
+          updatedContent =
+            updatedContent.substring(0, endOfImportIndex) +
+            "\n" +
+            importStatement +
+            updatedContent.substring(endOfImportIndex);
+        } else {
+          // No imports yet, add at the beginning of the file
+          updatedContent = importStatement + "\n" + updatedContent;
+        }
+
+        // Add to imports array in the @Module decorator
+        if (updatedContent.includes("imports: [")) {
+          updatedContent = updatedContent.replace(
+            "imports: [",
+            `imports: [\n    UserModule,`
+          );
+        } else if (updatedContent.includes("imports: [],")) {
+          updatedContent = updatedContent.replace(
+            "imports: [],",
+            `imports: [UserModule],`
+          );
+        } else {
+          this.logWarning(
+            "Could not find imports array in AppModule. Please add it manually."
+          );
+        }
+
+        return updatedContent;
+      });
+    } catch (error: any) {
+      this.logError(`Error updating app.module.ts: ${error.message}`);
+    }
   }
 }

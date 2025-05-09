@@ -50,6 +50,24 @@ export class ModuleCommand extends BaseCommand {
     // Always use plural form for module name to be consistent
     moduleName = StringUtils.getPlural(moduleName as any);
 
+    // Check if trying to create user/users module when it already exists
+    const normalizedName = moduleName.toLowerCase();
+    const userModulePath = path.join(process.cwd(), "src", "user");
+    const usersModulePath = path.join(process.cwd(), "src", "users");
+
+    if (
+      (normalizedName === "users" || normalizedName === "user") &&
+      (FileUtils.exists(userModulePath) || FileUtils.exists(usersModulePath))
+    ) {
+      this.logError(
+        "Error: A user/users module already exists. This is likely because you have authentication enabled."
+      );
+      this.logInfo(
+        "The authentication module creates a user module automatically."
+      );
+      return;
+    }
+
     // Create module directory
     const moduleDir = path.join(process.cwd(), "src", moduleName);
 
@@ -62,6 +80,8 @@ export class ModuleCommand extends BaseCommand {
     FileUtils.createDirectory(moduleDir);
     FileUtils.createDirectory(path.join(moduleDir, "dto"));
     FileUtils.createDirectory(path.join(moduleDir, "entities"));
+    FileUtils.createDirectory(path.join(moduleDir, "controllers"));
+    FileUtils.createDirectory(path.join(moduleDir, "services"));
 
     // Check if a database integration is being used
     let databaseStrategy = null;
