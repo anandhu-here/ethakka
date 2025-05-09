@@ -2,10 +2,8 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import figlet from "figlet";
-import { ProjectCommand } from "./commands/project-command";
-import { ModuleCommand } from "./commands/module-command";
-import { AuthCommand } from "./commands/auth-command";
-import { AllCommand } from "./commands/all-command";
+import { ArchitectureFactory } from "./architectures/architecture-factory";
+import { AllOptions } from "./common/interfaces/command-options";
 
 // Initialize the CLI
 const program = new Command();
@@ -18,37 +16,70 @@ console.log(
 // Set version and description
 program
   .version("0.1.0")
-  .description("A CLI for generating NestJS applications with best practices");
+  .description("A CLI for generating applications with best practices");
 
 // Command to create a new project
 program
   .command("project")
-  .description("Create a new NestJS project")
+  .description("Create a new project")
   .option("-n, --name <name>", "Name of the project")
+  .option(
+    "-a, --architecture <architecture>",
+    "Architecture to use (nest, express, etc.)"
+  )
   .action(async (options) => {
-    const projectCommand = new ProjectCommand();
-    await projectCommand.execute(options);
+    try {
+      const architecture = options.architecture
+        ? ArchitectureFactory.getArchitecture(options.architecture)
+        : await ArchitectureFactory.promptForArchitecture();
+
+      await architecture.createProject(options);
+    } catch (error: any) {
+      console.error(chalk.red(`Error: ${error.message}`));
+    }
   });
 
 // Command to create a new module
 program
   .command("module")
-  .description("Create a new NestJS module")
+  .description("Create a new module")
   .option("-n, --name <name>", "Name of the module")
   .option("--crud", "Include CRUD operations")
+  .option(
+    "-a, --architecture <architecture>",
+    "Architecture to use (nest, express, etc.)"
+  )
   .action(async (options) => {
-    const moduleCommand = new ModuleCommand();
-    await moduleCommand.execute(options);
+    try {
+      const architecture = options.architecture
+        ? ArchitectureFactory.getArchitecture(options.architecture)
+        : await ArchitectureFactory.promptForArchitecture();
+
+      await architecture.createModule(options);
+    } catch (error: any) {
+      console.error(chalk.red(`Error: ${error.message}`));
+    }
   });
 
 // Command to add authentication
 program
   .command("auth")
-  .description("Add authentication to your NestJS application")
+  .description("Add authentication to your application")
   .option("--jwt", "Use JWT for authentication")
+  .option(
+    "-a, --architecture <architecture>",
+    "Architecture to use (nest, express, etc.)"
+  )
   .action(async (options) => {
-    const authCommand = new AuthCommand();
-    await authCommand.execute(options);
+    try {
+      const architecture = options.architecture
+        ? ArchitectureFactory.getArchitecture(options.architecture)
+        : await ArchitectureFactory.promptForArchitecture();
+
+      await architecture.addAuthentication(options);
+    } catch (error: any) {
+      console.error(chalk.red(`Error: ${error.message}`));
+    }
   });
 
 // Command to create a complete project with all components
@@ -58,13 +89,25 @@ program
   .option("-n, --name <name>", "Name of the project")
   .option("--auth", "Include authentication")
   .option("--modules <modules>", "Comma-separated list of modules to create")
-  .action(async (options) => {
-    const allCommand = new AllCommand();
-    // Parse modules if provided as a string
-    if (options.modules && typeof options.modules === "string") {
-      options.modules = options.modules.split(",").map((m: any) => m.trim());
+  .option(
+    "-a, --architecture <architecture>",
+    "Architecture to use (nest, express, etc.)"
+  )
+  .action(async (options: any) => {
+    try {
+      // Parse modules if provided as a string
+      if (options.modules && typeof options.modules === "string") {
+        options.modules = options.modules.split(",").map((m: any) => m.trim());
+      }
+
+      const architecture = options.architecture
+        ? ArchitectureFactory.getArchitecture(options.architecture)
+        : await ArchitectureFactory.promptForArchitecture();
+
+      await architecture.createAll(options);
+    } catch (error: any) {
+      console.error(chalk.red(`Error: ${error.message}`));
     }
-    await allCommand.execute(options);
   });
 
 // Parse command line arguments
