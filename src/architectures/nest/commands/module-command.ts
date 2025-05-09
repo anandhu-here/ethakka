@@ -4,6 +4,7 @@ import { BaseCommand } from "./base-command";
 import { ModuleOptions } from "../../../common/interfaces/command-options";
 import { FileUtils } from "../../../common/utils/file-utils";
 import { StringUtils } from "../../../common/utils/string-utils";
+import { DatabaseStrategyFactory } from "../../../common/database/database-strategy-factory";
 
 /**
  * ModuleCommand - Handles the creation of a new NestJS module
@@ -46,7 +47,7 @@ export class ModuleCommand extends BaseCommand {
       withCrud = answers.crud;
     }
 
-    // Ensure module name is in plural form for consistency
+    // Always use plural form for module name to be consistent
     moduleName = StringUtils.getPlural(moduleName as any);
 
     // Create module directory
@@ -62,11 +63,32 @@ export class ModuleCommand extends BaseCommand {
     FileUtils.createDirectory(path.join(moduleDir, "dto"));
     FileUtils.createDirectory(path.join(moduleDir, "entities"));
 
+    // Check if a database integration is being used
+    let databaseStrategy = null;
+    const prismaServicePath = path.join(
+      process.cwd(),
+      "src",
+      "prisma",
+      "prisma.service.ts"
+    );
+
+    if (FileUtils.exists(prismaServicePath)) {
+      databaseStrategy = DatabaseStrategyFactory.getStrategy("prisma");
+    }
+
     // Create module files
-    this.createModuleFiles(moduleDir, moduleName, withCrud);
+    this.createModuleFiles(moduleDir, moduleName, withCrud, databaseStrategy);
 
     // Update app.module.ts to include the new module
     this.updateAppModule(moduleName);
+
+    // If using Prisma, update the schema.prisma file
+    if (
+      databaseStrategy &&
+      databaseStrategy.getName().toLowerCase() === "prisma"
+    ) {
+      this.updatePrismaSchema(moduleName);
+    }
 
     this.logSuccess(`Module ${moduleName} created successfully!`);
   }
@@ -74,20 +96,26 @@ export class ModuleCommand extends BaseCommand {
   private createModuleFiles(
     moduleDir: string,
     moduleName: string,
-    withCrud: boolean
+    withCrud: boolean,
+    databaseStrategy: any
   ): void {
     const singularName = StringUtils.getSingular(moduleName);
     const className = StringUtils.toPascalCase(singularName);
     const propertyName = StringUtils.toCamelCase(singularName);
 
+    // Create subdirectories for controllers, services, etc.
+    FileUtils.createDirectory(path.join(moduleDir, "controllers"));
+    FileUtils.createDirectory(path.join(moduleDir, "services"));
+
     // Create module.ts
     FileUtils.createFile(
       path.join(moduleDir, `${moduleName}.module.ts`),
       `import { Module } from '@nestjs/common';
-import { ${className}Controller } from './${moduleName}.controller';
-import { ${className}Service } from './${moduleName}.service';
+import { ${className}Controller } from './controllers/${moduleName}.controller';
+import { ${className}Service } from './services/${moduleName}.service';
 
 @Module({
+  imports: [],
   controllers: [${className}Controller],
   providers: [${className}Service],
   exports: [${className}Service],
@@ -101,9 +129,9 @@ export class ${className}Module {}
     if (withCrud) {
       controllerContent = `import { Controller, Get, Post, Body, Patch, Param, Delete, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
-import { ${className}Service } from './${moduleName}.service';
-import { Create${className}Dto } from './dto/create-${singularName}.dto';
-import { Update${className}Dto } from './dto/update-${singularName}.dto';
+import { ${className}Service } from '../services/${moduleName}.service';
+import { Create${className}Dto } from '../dto/create-${singularName}.dto';
+import { Update${className}Dto } from '../dto/update-${singularName}.dto';
 
 @ApiTags('${moduleName}')
 @Controller('${moduleName}')
@@ -154,7 +182,7 @@ export class ${className}Controller {
     } else {
       controllerContent = `import { Controller } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { ${className}Service } from './${moduleName}.service';
+import { ${className}Service } from '../services/${moduleName}.service';
 
 @ApiTags('${moduleName}')
 @Controller('${moduleName}')
@@ -165,16 +193,19 @@ export class ${className}Controller {
     }
 
     FileUtils.createFile(
-      path.join(moduleDir, `${moduleName}.controller.ts`),
+      path.join(moduleDir, "controllers", `${moduleName}.controller.ts`),
       controllerContent
     );
 
-    // Create service.ts
+    // Create service.ts - Use database strategy if available
     let serviceContent = "";
-    if (withCrud) {
+    if (databaseStrategy && withCrud) {
+      serviceContent = databaseStrategy.getServiceImplementation(singularName);
+    } else if (withCrud) {
+      // Basic in-memory implementation
       serviceContent = `import { Injectable, NotFoundException } from '@nestjs/common';
-import { Create${className}Dto } from './dto/create-${singularName}.dto';
-import { Update${className}Dto } from './dto/update-${singularName}.dto';
+import { Create${className}Dto } from '../dto/create-${singularName}.dto';
+import { Update${className}Dto } from '../dto/update-${singularName}.dto';
 
 @Injectable()
 export class ${className}Service {
@@ -232,14 +263,14 @@ export class ${className}Service {
 `;
     } else {
       serviceContent = `import { Injectable } from '@nestjs/common';
-
+getServiceImplementation
 @Injectable()
 export class ${className}Service {}
 `;
     }
 
     FileUtils.createFile(
-      path.join(moduleDir, `${moduleName}.service.ts`),
+      path.join(moduleDir, "services", `${moduleName}.service.ts`),
       serviceContent
     );
 
@@ -248,13 +279,16 @@ export class ${className}Service {}
       path.join(moduleDir, "entities", `${singularName}.entity.ts`),
       `export class ${className} {
   id: string;
-${
-  withCrud
-    ? `  createdAt: Date;
+  
+  // Add your properties here
+  // Example:
+  // name: string;
+  // email?: string;
+  // age: number;
+  // isActive: boolean;
+  
+  createdAt: Date;
   updatedAt: Date;
-`
-    : ""
-}
 }
 `
     );
@@ -265,16 +299,52 @@ ${
       FileUtils.createFile(
         path.join(moduleDir, "dto", `create-${singularName}.dto.ts`),
         `import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsNumber, IsBoolean, IsEmail } from 'class-validator';
 
 export class Create${className}Dto {
+  /* 
+  // Uncomment and modify these examples as needed:
+
   @ApiProperty({
-    description: 'The name of the ${singularName}',
-    example: '${className} 1',
+    description: 'The name',
+    example: 'Example name',
   })
   @IsNotEmpty()
   @IsString()
   name: string;
+
+  @ApiProperty({
+    description: 'The description',
+    example: 'Example description',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiProperty({
+    description: 'Email address',
+    example: 'user@example.com',
+  })
+  @IsEmail()
+  email: string;
+
+  @ApiProperty({
+    description: 'Age',
+    example: 25,
+  })
+  @IsNumber()
+  age: number;
+
+  @ApiProperty({
+    description: 'Is active',
+    example: true,
+    default: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+  */
 }
 `
       );
@@ -290,7 +360,6 @@ export class Update${className}Dto extends PartialType(Create${className}Dto) {}
       );
     }
   }
-
   private updateAppModule(moduleName: string): void {
     const appModulePath = path.join(process.cwd(), "src", "app.module.ts");
 
@@ -357,6 +426,57 @@ export class Update${className}Dto extends PartialType(Create${className}Dto) {}
       });
     } catch (error: any) {
       this.logError(`Error updating app.module.ts: ${error.message}`);
+    }
+  }
+
+  private updatePrismaSchema(moduleName: string): void {
+    const prismaSchemaPath = path.join(
+      process.cwd(),
+      "prisma",
+      "schema.prisma"
+    );
+
+    if (!FileUtils.exists(prismaSchemaPath)) {
+      this.logWarning(
+        "Warning: schema.prisma not found. Could not update schema."
+      );
+      return;
+    }
+
+    const singularName = StringUtils.getSingular(moduleName);
+    const className = StringUtils.toPascalCase(singularName);
+
+    try {
+      FileUtils.updateFile(prismaSchemaPath, (content) => {
+        // Check if the model already exists
+        if (content.includes(`model ${className}`)) {
+          this.logWarning(
+            `Model ${className} already exists in Prisma schema.`
+          );
+          return content;
+        }
+
+        // Add the model to the end of the schema
+        return (
+          content +
+          `\n
+model ${className} {
+  id        String   @id @default(uuid())
+  
+  // Add your fields here
+  // Example:
+  // name      String
+  // email     String?
+  // isActive  Boolean @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+`
+        );
+      });
+    } catch (error: any) {
+      this.logError(`Error updating schema.prisma: ${error.message}`);
     }
   }
 }

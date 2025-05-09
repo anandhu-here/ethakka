@@ -3,7 +3,9 @@ import { ProjectCommand } from './commands/project-command';
 import { ModuleCommand } from './commands/module-command';
 import { AuthCommand } from './commands/auth-command';
 import { AllCommand } from './commands/all-command';
+import { DatabaseCommand } from './commands/database-command';
 import { ProjectOptions, ModuleOptions, AuthOptions } from '../../common/interfaces/command-options';
+import { DatabaseOptions } from '../../common/interfaces/database-options';
 
 /**
  * NestJS Architecture implementation
@@ -30,6 +32,11 @@ export class NestArchitecture extends BaseArchitecture {
   async addAuthentication(options: AuthOptions): Promise<void> {
     const authCommand = new AuthCommand();
     await authCommand.execute(options);
+  }
+
+  async addDatabase(options: DatabaseOptions): Promise<void> {
+    const databaseCommand = new DatabaseCommand();
+    await databaseCommand.execute(options);
   }
 
   async createAll(options: any): Promise<void> {

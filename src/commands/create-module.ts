@@ -124,9 +124,9 @@ export class ${className}Module {}
   if (withCrud) {
     controllerContent = `import { Controller, Get, Post, Body, Patch, Param, Delete, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
-import { ${className}Service } from './${moduleName}.service';
-import { Create${className}Dto } from './dto/create-${singularName}.dto';
-import { Update${className}Dto } from './dto/update-${singularName}.dto';
+import { ${className}Service } from '../services/${moduleName}.service';
+import { Create${className}Dto } from '../dto/create-${singularName}.dto';
+import { Update${className}Dto } from '../dto/update-${singularName}.dto';
 
 @ApiTags('${moduleName}')
 @Controller('${moduleName}')

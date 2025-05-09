@@ -57,9 +57,6 @@ export class AuthCommand extends BaseCommand {
     // Add necessary dependencies to package.json
     this.updatePackageJson(useJwt);
 
-    // Create user module (required for auth)
-    this.createUserModule();
-
     this.logSuccess("Authentication module created successfully!");
     this.logInfo(
       "\nTo complete setup:\n1. Run npm install to install new dependencies\n2. Add your JWT_SECRET to your .env file"
@@ -120,8 +117,8 @@ import { JwtStrategy } from './strategies/jwt.strategy';`
       path.join(authDir, "auth.module.ts"),
       `import { Module } from '@nestjs/common';
 import { PassportModule } from '@nestjs/passport';${jwtImports}
-import { AuthController } from './auth.controller';
-import { AuthService } from './auth.service';
+import { AuthController } from './controllers/auth.controller';
+import { AuthService } from './services/auth.service';
 import { UserModule } from '../user/user.module';${strategyImport}
 
 @Module({
@@ -141,16 +138,18 @@ export class AuthModule {}
   }
 
   private createAuthController(authDir: string, useJwt: boolean): void {
+    FileUtils.createDirectory(path.join(authDir, "controllers"));
+    FileUtils.createDirectory(path.join(authDir, "services"));
     FileUtils.createFile(
-      path.join(authDir, "auth.controller.ts"),
+      path.join(authDir, "controllers", "auth.controller.ts"),
       `import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { AuthService } from './auth.service';
-import { RegisterDto } from './dto/register.dto';
-import { LoginDto } from './dto/login.dto';
+import { AuthService } from '../services/auth.service';
+import { RegisterDto } from '../dto/register.dto';
+import { LoginDto } from '../dto/login.dto';
 ${
   useJwt
-    ? "import { JwtAuthGuard } from './guards/jwt-auth.guard';\nimport { CurrentUser } from '../common/decorators/current-user.decorator';"
+    ? "import { JwtAuthGuard } from '../guards/jwt-auth.guard';\nimport { CurrentUser } from '../../common/decorators/current-user.decorator';"
     : ""
 }
 
@@ -203,11 +202,11 @@ ${
 
   private createAuthService(authDir: string, useJwt: boolean): void {
     FileUtils.createFile(
-      path.join(authDir, "auth.service.ts"),
+      path.join(authDir, "services", "auth.service.ts"),
       `import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
-import { UserService } from '../user/user.service';
-import { RegisterDto } from './dto/register.dto';
-import { LoginDto } from './dto/login.dto';
+import { UserService } from '../../user/services/user.service';
+import { RegisterDto } from '../dto/register.dto';
+import { LoginDto } from '../dto/login.dto';
 import * as bcrypt from 'bcrypt';
 ${useJwt ? "import { JwtService } from '@nestjs/jwt';" : ""}
 
@@ -284,7 +283,7 @@ ${
 
       // Generate new tokens
       return this.generateTokens(user);
-    } catch (error: any) {
+    } catch (error) {
       throw new UnauthorizedException('Invalid token');
     }
   }
@@ -377,6 +376,9 @@ export class LoginDto {
   }
 
   private createJwtStrategy(authDir: string): void {
+    // Create strategies directory if not exists
+    FileUtils.createDirectory(path.join(authDir, "strategies"));
+
     // Create JWT Strategy
     FileUtils.createFile(
       path.join(authDir, "strategies", "jwt.strategy.ts"),
@@ -384,7 +386,7 @@ export class LoginDto {
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
-import { AuthService } from '../auth.service';
+import { AuthService } from '../services/auth.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -415,6 +417,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   private createJwtGuard(authDir: string): void {
+    // Create guards directory if not exists
+    FileUtils.createDirectory(path.join(authDir, "guards"));
+
     // Create JWT Guard
     FileUtils.createFile(
       path.join(authDir, "guards", "jwt-auth.guard.ts"),
@@ -448,7 +453,6 @@ export const CurrentUser = createParamDecorator(
 `
     );
   }
-
   private updateAppModule(useJwt: boolean): void {
     const appModulePath = path.join(process.cwd(), "src", "app.module.ts");
 
@@ -568,6 +572,8 @@ export const CurrentUser = createParamDecorator(
 
     FileUtils.createDirectory(userDir);
     FileUtils.createDirectory(path.join(userDir, "entities"));
+    FileUtils.createDirectory(path.join(userDir, "controllers"));
+    FileUtils.createDirectory(path.join(userDir, "services"));
 
     // Create user entity
     FileUtils.createFile(
@@ -588,7 +594,7 @@ export const CurrentUser = createParamDecorator(
     FileUtils.createFile(
       path.join(userDir, "user.module.ts"),
       `import { Module } from '@nestjs/common';
-import { UserService } from './user.service';
+import { UserService } from './services/user.service';
 
 @Module({
   providers: [UserService],
@@ -600,9 +606,9 @@ export class UserModule {}
 
     // Create user.service.ts
     FileUtils.createFile(
-      path.join(userDir, "user.service.ts"),
+      path.join(userDir, "services", "user.service.ts"),
       `import { Injectable } from '@nestjs/common';
-import { User } from './entities/user.entity';
+import { User } from '../entities/user.entity';
 
 @Injectable()
 export class UserService {
@@ -633,67 +639,5 @@ export class UserService {
 }
 `
     );
-
-    // Update app.module.ts to include the user module
-    const appModulePath = path.join(process.cwd(), "src", "app.module.ts");
-
-    if (!FileUtils.exists(appModulePath)) {
-      this.logWarning(
-        "Warning: app.module.ts not found. Could not update app module for UserModule."
-      );
-      return;
-    }
-
-    try {
-      FileUtils.updateFile(appModulePath, (content) => {
-        // Check if the module is already imported
-        if (content.includes("UserModule")) {
-          this.logWarning("UserModule is already imported in AppModule.");
-          return content;
-        }
-
-        let updatedContent = content;
-
-        // Add import statement
-        const importStatement = `import { UserModule } from './user/user.module';`;
-
-        if (updatedContent.includes("import {")) {
-          // Add after the last import statement
-          const lastImportIndex = updatedContent.lastIndexOf("import");
-          const endOfImportIndex =
-            updatedContent.indexOf(";", lastImportIndex) + 1;
-
-          updatedContent =
-            updatedContent.substring(0, endOfImportIndex) +
-            "\n" +
-            importStatement +
-            updatedContent.substring(endOfImportIndex);
-        } else {
-          // No imports yet, add at the beginning of the file
-          updatedContent = importStatement + "\n" + updatedContent;
-        }
-
-        // Add to imports array in the @Module decorator
-        if (updatedContent.includes("imports: [")) {
-          updatedContent = updatedContent.replace(
-            "imports: [",
-            `imports: [\n    UserModule,`
-          );
-        } else if (updatedContent.includes("imports: [],")) {
-          updatedContent = updatedContent.replace(
-            "imports: [],",
-            `imports: [UserModule],`
-          );
-        } else {
-          this.logWarning(
-            "Could not find imports array in AppModule. Please add it manually."
-          );
-        }
-
-        return updatedContent;
-      });
-    } catch (error: any) {
-      this.logError(`Error updating app.module.ts: ${error.message}`);
-    }
   }
 }

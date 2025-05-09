@@ -4,13 +4,16 @@ import { BaseCommand } from "./base-command";
 import { ProjectCommand } from "./project-command";
 import { ModuleCommand } from "./module-command";
 import { AuthCommand } from "./auth-command";
+import { DatabaseCommand } from "./database-command";
 import { execSync } from "child_process";
 import chalk from "chalk";
 import { EnvironmentUtils } from "../../../common/utils/environment-utils";
+import { StringUtils } from "../../../common/utils/string-utils";
 
 interface AllOptions {
   name?: string;
   auth?: boolean;
+  db?: string;
   modules?: string[];
 }
 
@@ -40,7 +43,26 @@ export class AllCommand extends BaseCommand {
       this.logInfo("Installing dependencies...");
       this.runCommand("npm install");
 
-      // Step 3: Add authentication if requested
+      // Step 3: Add database if requested
+      if (projectDetails.database) {
+        this.logInfo(
+          `Adding ${projectDetails.database} database integration...`
+        );
+        const databaseCommand = new DatabaseCommand();
+        await databaseCommand.execute({ type: projectDetails.database });
+
+        // Install database dependencies
+        this.logInfo("Installing database dependencies...");
+        this.runCommand("npm install");
+
+        // If Prisma, generate client
+        if (projectDetails.database === "prisma") {
+          this.logInfo("Generating Prisma client...");
+          this.runCommand("npx prisma generate");
+        }
+      }
+
+      // Step 4: Add authentication if requested
       if (projectDetails.auth) {
         this.logInfo("Adding authentication...");
         const authCommand = new AuthCommand();
@@ -51,12 +73,15 @@ export class AllCommand extends BaseCommand {
         this.runCommand("npm install");
       }
 
-      // Step 4: Add requested modules
+      // Step 5: Add requested modules
       if (projectDetails.modules && projectDetails.modules.length > 0) {
         for (const moduleName of projectDetails.modules) {
           this.logInfo(`Creating module: ${moduleName}...`);
           const moduleCommand = new ModuleCommand();
-          await moduleCommand.execute({ name: moduleName, crud: true });
+
+          // Ensure we use the plural form of module names consistently
+          const pluralModuleName = StringUtils.getPlural(moduleName);
+          await moduleCommand.execute({ name: pluralModuleName, crud: true });
         }
       }
 
@@ -65,6 +90,11 @@ export class AllCommand extends BaseCommand {
 
 Your project includes:
 ${projectDetails.auth ? "- JWT Authentication" : ""}
+${
+  projectDetails.database
+    ? `- ${projectDetails.database} Database Integration`
+    : ""
+}
 ${
   projectDetails.modules && projectDetails.modules.length
     ? "- Modules: " + projectDetails.modules.join(", ")
@@ -78,6 +108,11 @@ To get started:
 $ cd ${projectDetails.name}
 $ npm run start:dev
 
+${
+  projectDetails.database === "prisma"
+    ? "For Prisma database:\n1. Update your .env file with the DATABASE_URL\n2. Run npx prisma migrate dev to create your first migration\n3. Run npx prisma studio to explore your database\n"
+    : ""
+}
 Don't forget to update the environment variables in the .env file!
       `);
     } catch (error: any) {
@@ -85,9 +120,12 @@ Don't forget to update the environment variables in the .env file!
     }
   }
 
-  private async promptForDetails(
-    options: AllOptions
-  ): Promise<{ name: string; auth: boolean; modules: string[] }> {
+  private async promptForDetails(options: AllOptions): Promise<{
+    name: string;
+    auth: boolean;
+    database: string;
+    modules: string[];
+  }> {
     const questions = [];
 
     // Project name
@@ -102,6 +140,20 @@ Don't forget to update the environment variables in the .env file!
           else
             return "Project name may only include lowercase letters, numbers, underscores and hashes.";
         },
+      });
+    }
+
+    // Database
+    if (!options.db) {
+      questions.push({
+        type: "list",
+        name: "database",
+        message: "Select a database integration:",
+        choices: [
+          { name: "Prisma - Modern TypeScript ORM", value: "prisma" },
+          { name: "None - Skip database integration", value: null },
+        ],
+        default: "prisma",
       });
     }
 
@@ -135,6 +187,7 @@ Don't forget to update the environment variables in the .env file!
     return {
       name: options.name || answers.name,
       auth: options.auth !== undefined ? options.auth : answers.auth,
+      database: options.db || answers.database,
       modules: options.modules || answers.modules,
     };
   }
