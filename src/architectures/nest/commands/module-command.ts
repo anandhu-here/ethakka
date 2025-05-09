@@ -5,6 +5,7 @@ import { ModuleOptions } from "../../../common/interfaces/command-options";
 import { FileUtils } from "../../../common/utils/file-utils";
 import { StringUtils } from "../../../common/utils/string-utils";
 import { DatabaseStrategyFactory } from "../../../common/database/database-strategy-factory";
+import { RestClientUtils } from "../../../common/utils/restclient-utils";
 
 /**
  * ModuleCommand - Handles the creation of a new NestJS module
@@ -109,6 +110,8 @@ export class ModuleCommand extends BaseCommand {
     ) {
       this.updatePrismaSchema(moduleName);
     }
+
+    this.generateRestClientFile(moduleName);
 
     this.logSuccess(`Module ${moduleName} created successfully!`);
   }
@@ -446,6 +449,21 @@ export class Update${className}Dto extends PartialType(Create${className}Dto) {}
       });
     } catch (error: any) {
       this.logError(`Error updating app.module.ts: ${error.message}`);
+    }
+  }
+
+  private generateRestClientFile(moduleName: string): void {
+    const restClientDir = path.join(process.cwd(), ".vscode", "rest-client");
+    FileUtils.createDirectory(path.join(process.cwd(), ".vscode"));
+    FileUtils.createDirectory(restClientDir);
+
+    // Generate REST client file for this module
+    RestClientUtils.createModuleRestClient(restClientDir, moduleName);
+
+    // Generate auth REST client file if it doesn't exist
+    const authFilePath = path.join(restClientDir, "auth.http");
+    if (!FileUtils.exists(authFilePath)) {
+      RestClientUtils.createAuthRestClient(restClientDir);
     }
   }
 

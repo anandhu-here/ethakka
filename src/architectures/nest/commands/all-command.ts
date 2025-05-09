@@ -10,6 +10,7 @@ import chalk from "chalk";
 import { EnvironmentUtils } from "../../../common/utils/environment-utils";
 import { StringUtils } from "../../../common/utils/string-utils";
 import { FileUtils } from "../../../common/utils/file-utils";
+import { RestClientUtils } from "../../../common/utils/restclient-utils";
 
 interface AllOptions {
   name?: string;
@@ -113,16 +114,15 @@ export class AllCommand extends BaseCommand {
         FileUtils.createDirectory(restClientDir);
 
         // Generate auth REST client file
-        // RestClientUtils.createAuthRestClient(restClientDir);
+        RestClientUtils.createAuthRestClient(restClientDir);
 
-        // Generate module-specific REST client files
-        // for (const moduleName of projectDetails.modules) {
-        //   const pluralModuleName = StringUtils.getPlural(moduleName);
-        //   RestClientUtils.createModuleRestClient(
-        //     restClientDir,
-        //     pluralModuleName
-        //   );
-        // }
+        for (const moduleName of projectDetails.modules) {
+          const pluralModuleName = StringUtils.getPlural(moduleName);
+          RestClientUtils.createModuleRestClient(
+            restClientDir,
+            pluralModuleName
+          );
+        }
       }
 
       this.logSuccess(`

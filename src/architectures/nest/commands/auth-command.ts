@@ -121,7 +121,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';`
 import { PassportModule } from '@nestjs/passport';${jwtImports}
 import { AuthController } from './controllers/auth.controller';
 import { AuthService } from './services/auth.service';
-import { UserModule } from '../user/user.module';${strategyImport}
+import { UserModule } from '../users/users.module';${strategyImport}
 
 @Module({
   imports: [
@@ -206,7 +206,7 @@ ${
     FileUtils.createFile(
       path.join(authDir, "services", "auth.service.ts"),
       `import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
-import { UserService } from '../../user/services/users.service';
+import { UserService } from '../../users/services/users.service';
 import { RegisterDto } from '../dto/register.dto';
 import { LoginDto } from '../dto/login.dto';
 import * as bcrypt from 'bcrypt';
@@ -560,149 +560,6 @@ export const CurrentUser = createParamDecorator(
       );
     } catch (error: any) {
       this.logError(`Error updating package.json: ${error.message}`);
-    }
-  }
-
-  private createUserModule(): void {
-    // Create User module (required for auth) - using singular naming
-    const userDir = path.join(process.cwd(), "src", "user");
-    const usersDir = path.join(process.cwd(), "src", "users");
-
-    if (FileUtils.exists(userDir) || FileUtils.exists(usersDir)) {
-      this.logWarning("User module already exists. Skipping creation.");
-      return;
-    }
-
-    FileUtils.createDirectory(userDir);
-    FileUtils.createDirectory(path.join(userDir, "entities"));
-    FileUtils.createDirectory(path.join(userDir, "controllers"));
-    FileUtils.createDirectory(path.join(userDir, "services"));
-
-    // Create user entity
-    FileUtils.createFile(
-      path.join(userDir, "entities", "user.entity.ts"),
-      `export class User {
-  id: string;
-  email: string;
-  name: string;
-  password: string;
-  roles: string[];
-  createdAt: Date;
-  updatedAt: Date;
-}
-`
-    );
-
-    // Create user.module.ts
-    FileUtils.createFile(
-      path.join(userDir, "user.module.ts"),
-      `import { Module } from '@nestjs/common';
-import { UserService } from './services/users.service';
-
-@Module({
-  providers: [UserService],
-  exports: [UserService],
-})
-export class UserModule {}
-`
-    );
-
-    // Create user.service.ts
-    FileUtils.createFile(
-      path.join(userDir, "services", "user.service.ts"),
-      `import { Injectable } from '@nestjs/common';
-import { User } from '../entities/user.entity';
-
-@Injectable()
-export class UserService {
-  private readonly users: User[] = [];
-
-  async create(userData: any): Promise<User> {
-    const user: User = {
-      id: Date.now().toString(),
-      email: userData.email,
-      name: userData.name,
-      password: userData.password,
-      roles: ['user'],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    
-    this.users.push(user);
-    return user;
-  }
-
-  async findByEmail(email: string): Promise<User | undefined> {
-    return this.users.find(user => user.email === email);
-  }
-
-  async findById(id: string): Promise<User | undefined> {
-    return this.users.find(user => user.id === id);
-  }
-}
-`
-    );
-
-    // Update app.module.ts to include the user module
-    const appModulePath = path.join(process.cwd(), "src", "app.module.ts");
-
-    if (!FileUtils.exists(appModulePath)) {
-      this.logWarning(
-        "Warning: app.module.ts not found. Could not update app module for UserModule."
-      );
-      return;
-    }
-
-    try {
-      FileUtils.updateFile(appModulePath, (content) => {
-        // Check if the module is already imported
-        if (content.includes("UserModule")) {
-          this.logWarning("UserModule is already imported in AppModule.");
-          return content;
-        }
-
-        let updatedContent = content;
-
-        // Add import statement
-        const importStatement = `import { UserModule } from './user/user.module';`;
-
-        if (updatedContent.includes("import {")) {
-          // Add after the last import statement
-          const lastImportIndex = updatedContent.lastIndexOf("import");
-          const endOfImportIndex =
-            updatedContent.indexOf(";", lastImportIndex) + 1;
-
-          updatedContent =
-            updatedContent.substring(0, endOfImportIndex) +
-            "\n" +
-            importStatement +
-            updatedContent.substring(endOfImportIndex);
-        } else {
-          // No imports yet, add at the beginning of the file
-          updatedContent = importStatement + "\n" + updatedContent;
-        }
-
-        // Add to imports array in the @Module decorator
-        if (updatedContent.includes("imports: [")) {
-          updatedContent = updatedContent.replace(
-            "imports: [",
-            `imports: [\n    UserModule,`
-          );
-        } else if (updatedContent.includes("imports: [],")) {
-          updatedContent = updatedContent.replace(
-            "imports: [],",
-            `imports: [UserModule],`
-          );
-        } else {
-          this.logWarning(
-            "Could not find imports array in AppModule. Please add it manually."
-          );
-        }
-
-        return updatedContent;
-      });
-    } catch (error: any) {
-      this.logError(`Error updating app.module.ts: ${error.message}`);
     }
   }
 }
